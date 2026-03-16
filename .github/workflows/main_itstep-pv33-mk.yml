@@ -26,14 +26,21 @@ jobs:
         run: |
           yarn install
           yarn build
-          if [ -d "public" ]; then cp -r public .next/standalone/public; fi
-          if [ -d ".next/static" ]; then cp -r .next/static .next/standalone/.next/static; fi
+          # Создаем чистую директорию для деплоя
+          mkdir -p deploy_staging
+          # Копируем всё содержимое standalone (включая скрытую папку .next и node_modules)
+          cp -a .next/standalone/. deploy_staging/
+          # Копируем .skiporyxbuild в корень деплоя
+          if [ -f ".skiporyxbuild" ]; then cp .skiporyxbuild deploy_staging/; fi
+          # Копируем статику и публичные файлы (согласно докам Next.js для standalone)
+          if [ -d "public" ]; then cp -r public deploy_staging/; fi
+          if [ -d ".next/static" ]; then cp -r .next/static deploy_staging/.next/; fi
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .next/standalone
+          path: deploy_staging
 
   deploy:
     runs-on: ubuntu-latest
