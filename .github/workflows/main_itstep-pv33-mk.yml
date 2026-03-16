@@ -28,13 +28,35 @@ jobs:
           yarn build
           # Создаем чистую директорию для деплоя
           mkdir -p deploy_staging
-          # Копируем всё содержимое standalone (включая скрытую папку .next и node_modules)
-          cp -a .next/standalone/. deploy_staging/
-          # Копируем .skiporyxbuild в корень деплоя
-          if [ -f ".skiporyxbuild" ]; then cp .skiporyxbuild deploy_staging/; fi
-          # Копируем статику и публичные файлы (согласно докам Next.js для standalone)
+          
+          # 1. Копируем сервер и node_modules из standalone билда
+          # Мы копируем .next/standalone/server.js и .next/standalone/.next (скрытую папку) отдельно для надежности
+          cp .next/standalone/server.js deploy_staging/
+          cp .next/standalone/package.json deploy_staging/
+          cp -r .next/standalone/node_modules deploy_staging/
+          # Копируем саму папку .next из standalone (ВАЖНО для работы сервера)
+          cp -r .next/standalone/.next deploy_staging/
+          
+          # 2. Копируем статические файлы в нужное место (согласно документации Next.js)
+          # Папка public должна быть в корне, а static - внутри .next
           if [ -d "public" ]; then cp -r public deploy_staging/; fi
-          if [ -d ".next/static" ]; then cp -r .next/static deploy_staging/.next/; fi
+          if [ -d ".next/static" ]; then 
+            mkdir -p deploy_staging/.next/static
+            cp -r .next/static/. deploy_staging/.next/static/
+          fi
+          
+          # 3. Добавляем флаг отмены сборки Azure Oryx
+          if [ -f ".skiporyxbuild" ]; then cp .skiporyxbuild deploy_staging/; fi
+          
+          # 4. Копируем корневой package.json (в нем команда start)
+          cp package.json deploy_staging/
+
+      - name: Verify build artifacts
+        run: |
+          echo "Содержимое папки деплоя (deploy_staging):"
+          ls -la deploy_staging
+          echo "Содержимое папки deploy_staging/.next:"
+          if [ -d "deploy_staging/.next" ]; then ls -la deploy_staging/.next; fi
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
