@@ -1,7 +1,4 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy Node.js app to Azure Web App - itstep-pv33-mk
+name: Build and deploy Docker image to Azure Web App - itstep-pv33-mk
 
 on:
   push:
@@ -10,73 +7,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v4
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v1
         with:
-          node-version: '24'
-          cache: 'yarn'
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: yarn install and build
+      - name: Build and push container image
         run: |
-          yarn install
-          yarn build
-          # Создаем чистую директорию для деплоя
-          mkdir -p deploy_staging
-          
-          # 1. Копируем сервер и node_modules из standalone билда
-          # Мы копируем .next/standalone/server.js и .next/standalone/.next (скрытую папку) отдельно для надежности
-          cp .next/standalone/server.js deploy_staging/
-          cp .next/standalone/package.json deploy_staging/
-          cp -r .next/standalone/node_modules deploy_staging/
-          # Копируем саму папку .next из standalone (ВАЖНО для работы сервера)
-          cp -r .next/standalone/.next deploy_staging/
-          
-          # 2. Копируем статические файлы в нужное место (согласно документации Next.js)
-          # Папка public должна быть в корне, а static - внутри .next
-          if [ -d "public" ]; then cp -r public deploy_staging/; fi
-          if [ -d ".next/static" ]; then 
-            mkdir -p deploy_staging/.next/static
-            cp -r .next/static/. deploy_staging/.next/static/
-          fi
-          
-          # 3. Добавляем флаг отмены сборки Azure Oryx
-          if [ -f ".skiporyxbuild" ]; then cp .skiporyxbuild deploy_staging/; fi
-          
-          # 4. Копируем корневой package.json (в нем команда start)
-          cp package.json deploy_staging/
-
-      - name: Verify build artifacts
-        run: |
-          echo "Содержимое папки деплоя (deploy_staging):"
-          ls -la deploy_staging
-          echo "Содержимое папки deploy_staging/.next:"
-          if [ -d "deploy_staging/.next" ]; then ls -la deploy_staging/.next; fi
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-app
-          path: deploy_staging
+          # Собираем образ. Мы используем секрет ACR_LOGIN_SERVER для тега
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/next-app:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/next-app:latest
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-and-push
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: node-app
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -89,5 +46,4 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'itstep-pv33-mk'
-          slot-name: 'Production'
-          package: .
+          images: '${{ secrets.ACR_LOGIN_SERVER }}/next-app:latest'
